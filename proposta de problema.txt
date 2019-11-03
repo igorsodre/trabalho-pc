@@ -5,4 +5,6 @@
 - Cada posição neste grid somente poderá ser ocupada por um entregador por vez
 - Cada pacote terá um peso
 - O tempo que cada entregador levará para percorrer cada cédula do grid dependerá do peso do pacote
+- devem caminhos cruzados para os entregadores
 - Após cada entrega o entregador deverá percorrer o caminho reverso para voltar a base, antes de poder pegar um novo pacote para entregar
+- Testes com tamanhos pequenos de grids até tamanhos grandes de grids com numero variavel de entregadores
