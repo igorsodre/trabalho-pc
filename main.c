@@ -17,31 +17,37 @@
 // pthread_create(&var_thread[i], NULL, funcao, &i);
 // pthread_join(var_thread[i], NULL);
 
-typedef struct
+struct GridCell
 {
     short ocupied;
     int package_id;
-} GridCell;
+};
+typedef struct GridCell GridCell;
 
-typedef struct
+struct Deliverer
 {
     int current_x_pos;
     int current_y_pos;
     int caminhox[MAX_PATH_SIZE];
     int caminhoy[MAX_PATH_SIZE];
     int path_size;
-} Deliverer;
+};
+typedef struct Deliverer Deliverer;
 
 GridCell city_map[MAX_CELLS][MAX_CELLS];
 Deliverer deliverers[MAX_CELLS];
-pthread_t threads[MAX_CELLS];
+pthread_t threads_dev[MAX_CELLS];
+pthread_t packages_gen;
+int ID_TABLE[MAX_CELLS];
 
 void build_grid(int grid_size)
 {
-
     for (int i = 0; i < grid_size; i++)
+    {
+        ID_TABLE[i] = i;
         for (int j = 0; j < grid_size; j++)
             city_map[i][j].ocupied = EMPTY;
+    }
 }
 
 void set_up(int *direction)
@@ -88,7 +94,7 @@ void set_up_or_right_or_left(int *direction)
         set_left(direction);
 }
 
-int *get_possible_directions(Deliverer del, int curr_it, int limit, int final_x, int final_y)
+int *get_next_direction(Deliverer del, int curr_it, int limit, int final_x, int final_y)
 {
     int currentx = del.caminhox[curr_it];
     int currenty = del.caminhoy[curr_it];
@@ -111,6 +117,7 @@ int *get_possible_directions(Deliverer del, int curr_it, int limit, int final_x,
         {
             set_up_or_right_or_left(direction);
         }
+        return direction;
     }
 
     int previuosx = del.caminhox[curr_it - 1];
@@ -125,7 +132,7 @@ int *get_possible_directions(Deliverer del, int curr_it, int limit, int final_x,
 
         return direction;
     }
-
+    // caso tenha movido para direita anteriormente
     else if (previuosx == currentx && currenty > previousy)
     {
         if (currenty == limit - 1)
@@ -137,6 +144,7 @@ int *get_possible_directions(Deliverer del, int curr_it, int limit, int final_x,
             set_up_or_right(direction);
         }
     }
+    // caso tenha movido para esquerda anteriormente
     else if (previuosx == currentx && currenty < previousy)
     {
         if (currenty == 0)
@@ -148,7 +156,7 @@ int *get_possible_directions(Deliverer del, int curr_it, int limit, int final_x,
             set_up_or_left(direction);
         }
     }
-    else
+    else // caso tenha movido para cima anteriormente
     {
         if (currenty == limit - 1)
         {
@@ -191,7 +199,7 @@ Deliverer build_deliverers(int limit, int number)
         built.caminhoy[0] = cell_start;
         for (int i = 0;; i++)
         {
-            int *directions = get_possible_directions(built, i, limit, final_x, final_y);
+            int *directions = get_next_direction(built, i, limit, final_x, final_y);
             built.caminhox[i + 1] = built.caminhox[i] + directions[0];
             built.caminhoy[i + 1] = built.caminhoy[i] + directions[1];
             free(directions);
@@ -206,37 +214,45 @@ Deliverer build_deliverers(int limit, int number)
     }
 }
 
-void work_mutherfucker(void *options)
-{
-}
-
 void print_deliverer_path(Deliverer del)
 {
-
+    printf("Path size: %d\n", del.path_size);
     for (int i = 0; i < del.path_size; i++)
     {
         printf("Celula (x, y) = (%d, %d)\n\n", del.caminhox[i], del.caminhoy[i]);
     }
 }
 
+void *generate_the_god_dam_package()
+{
+
+}
+
+void *work_mutherfucker(void *options)
+{
+    int thread_id = *((int *)options);
+    sleep(1);
+    fprintf(stderr, "Thread id: %d\n", thread_id);
+}
+
 int main(int argc, char const *argv[])
 {
+    // pega os argumentos da linha de comando
     int grid_size = atoi(argv[1]);
     int num_deliverers = atoi(argv[2]);
 
     srand(time(NULL));
-    printf("\n\n%d   ====    %d\n", grid_size, num_deliverers);
-    build_grid(argv);
+    build_grid(grid_size);
     build_deliverers(grid_size, num_deliverers);
-    
-    // start deliverers threads
-    // start packages thead
-    for (int n = 0; n < num_deliverers; n++)
-    {
-        printf("\nDeliverer %d: \n", n);
-        print_deliverer_path(deliverers[n]);
-        printf("\n=====================================\n1");
-    }
 
+    // start deliverers threads_dev
+    for (int count = 0; count < num_deliverers; count++) // descobri que se passar o &count nem sempre chega o valor correto na thread
+        pthread_create(&threads_dev[count], NULL, work_mutherfucker, ID_TABLE + count);
+   
+    // start packages thRead
+    pthread_create(&packages_gen, NULL, generate_the_god_dam_package, NULL);
+
+    for (int count = 0; count < num_deliverers; count++)
+        pthread_join(threads_dev[count], NULL);
     return 0;
 }
