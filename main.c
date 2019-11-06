@@ -4,12 +4,16 @@
 #include <math.h>
 #include <time.h>
 #include <unistd.h>
+#include <errno.h>
+#include "list.h"
 #define MAX_CELLS 100
+#define MAX_PACKAGES 100
 #define MAX_PATH_SIZE 10000
 #define EMPTY 0
 #define CIMA 1
 #define DIREITA 2
 #define ESQUERDA 3
+
 // pthread_mutex_init(&mutex, 0);
 // pthread_mutex_destroy(&mutex);
 // pthread_mutex_lock(&mutex);
@@ -21,6 +25,8 @@ struct GridCell
 {
     short ocupied;
     int package_id;
+    int hasPath;
+    int x_position, y_position;
 };
 typedef struct GridCell GridCell;
 
@@ -39,14 +45,43 @@ Deliverer deliverers[MAX_CELLS];
 pthread_t threads_dev[MAX_CELLS];
 pthread_t packages_gen;
 int ID_TABLE[MAX_CELLS];
+ArrayList *packageList;
+pthread_mutex_t mutex_packages;
+pthread_mutex_t mutex_grid;
 
+int msleep(long msec)
+{
+    struct timespec ts;
+    int res;
+
+    if (msec < 0)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    ts.tv_sec = msec / 1000;
+    ts.tv_nsec = (msec % 1000) * 1000000;
+
+    do
+    {
+        res = nanosleep(&ts, &ts);
+    } while (res && errno == EINTR);
+
+    return res;
+}
 void build_grid(int grid_size)
 {
     for (int i = 0; i < grid_size; i++)
     {
         ID_TABLE[i] = i;
         for (int j = 0; j < grid_size; j++)
+        {
             city_map[i][j].ocupied = EMPTY;
+            city_map[i][j].hasPath = 0;
+            city_map[i][j].x_position = i;
+            city_map[i][j].y_position = j;
+        }
     }
 }
 
@@ -197,11 +232,14 @@ Deliverer build_deliverers(int limit, int number)
 
         built.caminhox[0] = 0;
         built.caminhoy[0] = cell_start;
+        city_map[built.caminhox[0]][built.caminhoy[0]].hasPath = 1;
         for (int i = 0;; i++)
         {
             int *directions = get_next_direction(built, i, limit, final_x, final_y);
             built.caminhox[i + 1] = built.caminhox[i] + directions[0];
             built.caminhoy[i + 1] = built.caminhoy[i] + directions[1];
+            // Marca as celulas que entregadores passam por
+            city_map[built.caminhox[i + 1]][built.caminhoy[i + 1]].hasPath = 1;
             free(directions);
             if (built.caminhox[i + 1] == final_x && built.caminhoy[i + 1] == final_y)
             {
@@ -223,16 +261,65 @@ void print_deliverer_path(Deliverer del)
     }
 }
 
-void *generate_the_god_dam_package()
+GridCell *get_available_positions(int limit, int *listSize)
 {
-
+    GridCell *myList = (GridCell *)malloc(sizeof(GridCell) * limit * limit);
+    int cellCount = 0;
+    for (int i = 0; i < limit; i++)
+        for (int j = 0; j < limit; j++)
+            if (city_map[i][j].hasPath == 1)
+                myList[cellCount++] = city_map[i][j];
+    *listSize = cellCount;
+    return myList;
 }
 
-void *work_mutherfucker(void *options)
+void print_available_positions(GridCell *cells, int listSize)
 {
-    int thread_id = *((int *)options);
-    sleep(1);
-    fprintf(stderr, "Thread id: %d\n", thread_id);
+    printf("\n================================================\n");
+    for (int i = 0; i < listSize; i++)
+        printf("Celula (x, y) = (%d, %d)\n\n", cells[i].x_position, cells[i].y_position);
+}
+
+void *generate_the_god_damn_package(void *limitPointer)
+{
+    int limit = (*(int *)limitPointer);
+    int listSize;
+    // Recupera lista que entregadores passam por
+    GridCell *availablePosition = get_available_positions(limit, &listSize);
+    while (1)
+    {
+        Package pac;
+        int created_packs;
+        // Escolhe randomicamente a localizacao do pacote gerado
+        int cellIndex = rand() % listSize;
+        pac.x_position = availablePosition[cellIndex].x_position;
+        pac.y_position = availablePosition[cellIndex].y_position;
+        pac.package_id = (rand() + 10000);
+        pthread_mutex_lock(&mutex_packages);
+        if ((created_packs = size(packageList)) < MAX_PACKAGES)
+        {
+            add(packageList, pac);
+            fprintf(stderr, "Package generated to location (x, y) = (%d, %d).\n", pac.x_position, pac.y_position);
+        }
+        pthread_mutex_unlock(&mutex_packages);
+        if (created_packs > 10)
+            sleep(10);
+        else
+            msleep(300);
+    }
+}
+
+void *work_mutherfucker(void *id_pointer)
+{
+    int thread_id = *((int *)id_pointer);
+    Deliverer dev = deliverers[thread_id];
+
+    while (1)
+    {
+        // Pegar um pacote
+        // Entregar o pacote
+    }
+    
 }
 
 int main(int argc, char const *argv[])
@@ -242,17 +329,20 @@ int main(int argc, char const *argv[])
     int num_deliverers = atoi(argv[2]);
 
     srand(time(NULL));
+    packageList = new_ArrayList(MAX_PACKAGES);
     build_grid(grid_size);
     build_deliverers(grid_size, num_deliverers);
-
+    pthread_mutex_init(&mutex_grid, 0);
+    pthread_mutex_init(&mutex_packages, 0);
     // start deliverers threads_dev
-    for (int count = 0; count < num_deliverers; count++) // descobri que se passar o &count nem sempre chega o valor correto na thread
-        pthread_create(&threads_dev[count], NULL, work_mutherfucker, ID_TABLE + count);
-   
-    // start packages thRead
-    pthread_create(&packages_gen, NULL, generate_the_god_dam_package, NULL);
+    // for (int count = 0; count < num_deliverers; count++) // descobri que se passar o "&count" nem sempre chega o valor correto na thread
+    //     pthread_create(&threads_dev[count], NULL, work_mutherfucker, ID_TABLE + count);
 
-    for (int count = 0; count < num_deliverers; count++)
-        pthread_join(threads_dev[count], NULL);
+    // start packages thRead
+    pthread_create(&packages_gen, NULL, generate_the_god_damn_package, &grid_size);
+
+    // for (int count = 0; count < num_deliverers; count++)
+    //     pthread_join(threads_dev[count], NULL);
+    pthread_join(packages_gen, NULL);
     return 0;
 }

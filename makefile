@@ -1,7 +1,7 @@
 default: build run
 
 build: main.c
-	gcc main.c -o prog -lpthread -lm
+	gcc list.c main.c  -o prog -lpthread -lm -std=c11
 
 run: 
 	./prog 9 4
