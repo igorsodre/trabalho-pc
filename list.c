@@ -120,6 +120,15 @@ _Bool contains(ArrayList *list, LISTTYPE element)
 {
     return indexOf(list, element) != -1;
 }
+LISTTYPE *get_element_from_index(ArrayList *list, int index)
+{
+    if (index < 0 || index >= list->size)
+    {
+        printf("[ERROR] Trying to set %d. element of list having size %d\n", index, list->size);
+        return NULL;
+    }
+    return list->data + index;
+}
 
 int size(ArrayList *list)
 {

@@ -10,16 +10,8 @@
 #define MAX_PACKAGES 100
 #define MAX_PATH_SIZE 10000
 #define EMPTY 0
-#define CIMA 1
-#define DIREITA 2
-#define ESQUERDA 3
-
-// pthread_mutex_init(&mutex, 0);
-// pthread_mutex_destroy(&mutex);
-// pthread_mutex_lock(&mutex);
-// pthread_mutex_unlock(&mutex);
-// pthread_create(&var_thread[i], NULL, funcao, &i);
-// pthread_join(var_thread[i], NULL);
+#define MINIMUM_SPEED 500
+#define OCUPIED_TIME 1000
 
 struct GridCell
 {
@@ -32,11 +24,11 @@ typedef struct GridCell GridCell;
 
 struct Deliverer
 {
-    int current_x_pos;
-    int current_y_pos;
+    int curr_pos;
     int caminhox[MAX_PATH_SIZE];
     int caminhoy[MAX_PATH_SIZE];
     int path_size;
+    int id;
 };
 typedef struct Deliverer Deliverer;
 
@@ -294,7 +286,8 @@ void *generate_the_god_damn_package(void *limitPointer)
         int cellIndex = rand() % listSize;
         pac.x_position = availablePosition[cellIndex].x_position;
         pac.y_position = availablePosition[cellIndex].y_position;
-        pac.package_id = (rand() + 10000);
+        pac.package_id = (rand() % 21458) + 10000;
+        pac.weight = (rand() % 9) + 1;
         pthread_mutex_lock(&mutex_packages);
         if ((created_packs = size(packageList)) < MAX_PACKAGES)
         {
@@ -309,17 +302,130 @@ void *generate_the_god_damn_package(void *limitPointer)
     }
 }
 
+int isInPath(Deliverer *dev, Package *pac)
+{
+    for (int i = 0; i < dev->path_size; i++)
+        if (pac->x_position == dev->caminhox[i] && pac->y_position == dev->caminhoy[i])
+            return 1;
+    return 0;
+}
+
+Package get_package_delivery(Deliverer *dev)
+{
+    int created_packs;
+    Package pac;
+    while (1)
+    {
+        pthread_mutex_lock(&mutex_packages);
+        if ((created_packs = size(packageList)) > 0)
+        {
+            for (int i = 0; i < created_packs; i++)
+            {
+                pac = *(get_element_from_index(packageList, i));
+                if (isInPath(dev, &pac))
+                {
+                    removeEl(packageList, pac);
+                    pthread_mutex_unlock(&mutex_packages);
+                    return pac;
+                }
+            }
+        }
+        pthread_mutex_unlock(&mutex_packages);
+        fprintf(stderr, "There is not a package available for deliverer %d to pick up\n", dev->id);
+        msleep(2500);
+    }
+}
+
+void go_to_shoulder_road(Deliverer *dev)
+{
+    int x = dev->caminhox[dev->curr_pos];
+    int y = dev->caminhoy[dev->curr_pos];
+    int current_ocupied_value = 0;
+    int should_continue = 0;
+    do
+    {
+        if (dev->curr_pos != 0)
+        {
+            
+            city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied = current_ocupied_value;
+            fprintf(stderr, "Deliverer %d went to the road shoulder\n", dev->id);
+            pthread_mutex_unlock(&mutex_grid);
+            msleep(OCUPIED_TIME);
+            pthread_mutex_lock(&mutex_grid);
+            current_ocupied_value = city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied;
+            should_continue = city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied != 1 &&
+                     city_map[x][y].ocupied != 1;
+        }
+        else
+        {
+            pthread_mutex_unlock(&mutex_grid);
+            msleep(OCUPIED_TIME);
+            should_continue =  city_map[x][y].ocupied != 1;
+        }
+
+    } while (should_continue);
+}
+
+void deliver_package(Deliverer *dev, Package *pac)
+{
+    int speed = MINIMUM_SPEED + (pac->weight * 100);
+    for (dev->curr_pos = 0; dev->curr_pos < dev->path_size; dev->curr_pos++)
+    {
+        int x = dev->caminhox[dev->curr_pos];
+        int y = dev->caminhoy[dev->curr_pos];
+        int times_stopped = 0;
+
+        pthread_mutex_lock(&mutex_grid);
+        if (city_map[x][y].ocupied)
+        {
+            // se tiver ocupado
+            // faça enquanto estiver ocupado
+            // verifica o numero de vezes que esta parada
+            // se mais que 2, vai pro acostamento
+            // se nao, dorme
+            int should_continue = 0;
+
+            do
+            {
+                pthread_mutex_unlock(&mutex_grid);
+                if (times_stopped >= 2)
+                {
+                    go_to_shoulder_road(dev);
+                }
+                else
+                {
+                    pthread_mutex_unlock(&mutex_grid);
+                    msleep(OCUPIED_TIME);
+                }
+
+                times_stopped++;
+            } while (should_continue == 0);
+        }
+
+        city_map[x][y].ocupied = 1;
+        if (dev->curr_pos != 0)
+            city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied = 0;
+        pthread_mutex_unlock(&mutex_grid);
+        msleep(speed);
+    }
+}
+
 void *work_mutherfucker(void *id_pointer)
 {
     int thread_id = *((int *)id_pointer);
     Deliverer dev = deliverers[thread_id];
+    dev.id = thread_id;
 
     while (1)
     {
         // Pegar um pacote
+        Package package = get_package_delivery(&dev);
+        fprintf(stderr, "deliverer %d picked up package %d\n", dev.id, package.package_id);
         // Entregar o pacote
+        deliver_package(&dev, &package);
+        // return base
+        fprintf(stderr, "deliverer %d delivered package %d and came back to base\n", dev.id, package.package_id);
     }
-    
 }
 
 int main(int argc, char const *argv[])
@@ -334,15 +440,15 @@ int main(int argc, char const *argv[])
     build_deliverers(grid_size, num_deliverers);
     pthread_mutex_init(&mutex_grid, 0);
     pthread_mutex_init(&mutex_packages, 0);
-    // start deliverers threads_dev
-    // for (int count = 0; count < num_deliverers; count++) // descobri que se passar o "&count" nem sempre chega o valor correto na thread
-    //     pthread_create(&threads_dev[count], NULL, work_mutherfucker, ID_TABLE + count);
 
     // start packages thRead
     pthread_create(&packages_gen, NULL, generate_the_god_damn_package, &grid_size);
+    // start deliverers threads_dev
+    for (int count = 0; count < num_deliverers; count++) // descobri que se passar o "&count" nem sempre chega o valor correto na thread
+        pthread_create(&threads_dev[count], NULL, work_mutherfucker, ID_TABLE + count);
 
-    // for (int count = 0; count < num_deliverers; count++)
-    //     pthread_join(threads_dev[count], NULL);
+    for (int count = 0; count < num_deliverers; count++)
+        pthread_join(threads_dev[count], NULL);
     pthread_join(packages_gen, NULL);
     return 0;
 }

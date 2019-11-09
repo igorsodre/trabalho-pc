@@ -6,6 +6,7 @@ struct Package
     int x_position;
     int y_position;
     int package_id;
+    int weight;
 };
 typedef struct Package Package;
 struct ArrayListImpl;
@@ -15,6 +16,7 @@ ArrayList *new_ArrayList(int iSize);
 void destroy(ArrayList *list);
 
 int indexOf(ArrayList *list, LISTTYPE element);
+LISTTYPE *get_element_from_index(ArrayList *list, int index);
 void add(ArrayList *list, LISTTYPE element);
 void addBefore(ArrayList *list, int index, LISTTYPE element);
 void clear(ArrayList *list);
