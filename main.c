@@ -12,6 +12,7 @@
 #define EMPTY 0
 #define MINIMUM_SPEED 500
 #define OCUPIED_TIME 1000
+#define FREE -1
 
 struct GridCell
 {
@@ -340,30 +341,31 @@ void go_to_shoulder_road(Deliverer *dev)
 {
     int x = dev->caminhox[dev->curr_pos];
     int y = dev->caminhoy[dev->curr_pos];
-    int current_ocupied_value = 0;
-    int should_continue = 0;
-    do
-    {
-        if (dev->curr_pos != 0)
-        {
-            
-            city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied = current_ocupied_value;
-            fprintf(stderr, "Deliverer %d went to the road shoulder\n", dev->id);
-            pthread_mutex_unlock(&mutex_grid);
-            msleep(OCUPIED_TIME);
-            pthread_mutex_lock(&mutex_grid);
-            current_ocupied_value = city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied;
-            should_continue = city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied != 1 &&
-                     city_map[x][y].ocupied != 1;
-        }
-        else
-        {
-            pthread_mutex_unlock(&mutex_grid);
-            msleep(OCUPIED_TIME);
-            should_continue =  city_map[x][y].ocupied != 1;
-        }
 
-    } while (should_continue);
+    if (dev->curr_pos != 0)
+    {
+        city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied = FREE;
+        pthread_mutex_unlock(&mutex_grid);
+        fprintf(stderr, "Deliverer %d went to the road shoulder\n", dev->id);
+        msleep(OCUPIED_TIME << 1);
+        do
+        {
+            pthread_mutex_lock(&mutex_grid);
+            if (city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied != FREE)
+            {
+                pthread_mutex_unlock(&mutex_grid);
+                msleep(OCUPIED_TIME >> 1);
+                continue;
+            }
+        } while (city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied != FREE);
+        city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied = dev->id;
+    }
+    else
+    {
+        pthread_mutex_unlock(&mutex_grid);
+        msleep(OCUPIED_TIME << 1);
+        pthread_mutex_lock(&mutex_grid);
+    }
 }
 
 void deliver_package(Deliverer *dev, Package *pac)
@@ -376,18 +378,10 @@ void deliver_package(Deliverer *dev, Package *pac)
         int times_stopped = 0;
 
         pthread_mutex_lock(&mutex_grid);
-        if (city_map[x][y].ocupied)
+        if (city_map[x][y].ocupied != FREE)
         {
-            // se tiver ocupado
-            // faça enquanto estiver ocupado
-            // verifica o numero de vezes que esta parada
-            // se mais que 2, vai pro acostamento
-            // se nao, dorme
-            int should_continue = 0;
-
             do
             {
-                pthread_mutex_unlock(&mutex_grid);
                 if (times_stopped >= 2)
                 {
                     go_to_shoulder_road(dev);
@@ -397,14 +391,14 @@ void deliver_package(Deliverer *dev, Package *pac)
                     pthread_mutex_unlock(&mutex_grid);
                     msleep(OCUPIED_TIME);
                 }
-
                 times_stopped++;
-            } while (should_continue == 0);
+                pthread_mutex_lock(&mutex_grid);
+            } while (city_map[x][y].ocupied != FREE);
         }
 
-        city_map[x][y].ocupied = 1;
+        city_map[x][y].ocupied = dev->id;
         if (dev->curr_pos != 0)
-            city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied = 0;
+            city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied = dev->id;
         pthread_mutex_unlock(&mutex_grid);
         msleep(speed);
     }
