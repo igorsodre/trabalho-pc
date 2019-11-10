@@ -7,7 +7,7 @@
 #include <errno.h>
 #include "list.h"
 #define MAX_CELLS 100
-#define MAX_PACKAGES 12
+#define MAX_PACKAGES 150
 #define MAX_PATH_SIZE 10000
 #define MINIMUM_SPEED 500
 #define OCUPIED_TIME 1000
@@ -295,10 +295,10 @@ void *generate_the_god_damn_package(void *limitPointer)
             fprintf(stderr, "Package generated to location (x, y) = (%d, %d).\n", pac.x_position, pac.y_position);
         }
         pthread_mutex_unlock(&mutex_packages);
-        if (created_packs > 10)
+        if (created_packs > 150)
             sleep(10);
         else
-            msleep(300);
+            msleep(200);
     }
 }
 
