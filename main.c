@@ -7,9 +7,8 @@
 #include <errno.h>
 #include "list.h"
 #define MAX_CELLS 100
-#define MAX_PACKAGES 100
+#define MAX_PACKAGES 12
 #define MAX_PATH_SIZE 10000
-#define EMPTY 0
 #define MINIMUM_SPEED 500
 #define OCUPIED_TIME 1000
 #define FREE -1
@@ -70,7 +69,7 @@ void build_grid(int grid_size)
         ID_TABLE[i] = i;
         for (int j = 0; j < grid_size; j++)
         {
-            city_map[i][j].ocupied = EMPTY;
+            city_map[i][j].ocupied = FREE;
             city_map[i][j].hasPath = 0;
             city_map[i][j].x_position = i;
             city_map[i][j].y_position = j;
@@ -341,24 +340,27 @@ void go_to_shoulder_road(Deliverer *dev)
 {
     int x = dev->caminhox[dev->curr_pos];
     int y = dev->caminhoy[dev->curr_pos];
-
+    fprintf(stderr, "Deliveryman %d went to shoulder road at position (%d, %d)\n\n", dev->id, x, y);
     if (dev->curr_pos != 0)
     {
-        city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied = FREE;
+        int x_prev = dev->caminhox[dev->curr_pos - 1];
+        int y_prev = dev->caminhoy[dev->curr_pos - 1];
+        city_map[x_prev][y_prev].ocupied = FREE;
         pthread_mutex_unlock(&mutex_grid);
-        fprintf(stderr, "Deliverer %d went to the road shoulder\n", dev->id);
         msleep(OCUPIED_TIME << 1);
         do
         {
             pthread_mutex_lock(&mutex_grid);
-            if (city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied != FREE)
+            if (city_map[x_prev][y_prev].ocupied != FREE)
             {
                 pthread_mutex_unlock(&mutex_grid);
                 msleep(OCUPIED_TIME >> 1);
                 continue;
             }
-        } while (city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied != FREE);
-        city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied = dev->id;
+            else
+                break;
+        } while (1);
+        city_map[x_prev][y_prev].ocupied = dev->id;
     }
     else
     {
@@ -382,23 +384,37 @@ void deliver_package(Deliverer *dev, Package *pac)
         {
             do
             {
+                fprintf(stderr, "\nDeliveryman %d trying to ocupy location (%d, %d) that is ocupied\n\n", dev->id, x, y);
                 if (times_stopped >= 2)
                 {
                     go_to_shoulder_road(dev);
+                    fprintf(stderr, "\nDeliveryman %d got out of shoulder road at location (%d, %d) \n\n", dev->id, x, y);
                 }
                 else
                 {
                     pthread_mutex_unlock(&mutex_grid);
                     msleep(OCUPIED_TIME);
+                    pthread_mutex_lock(&mutex_grid);
                 }
                 times_stopped++;
-                pthread_mutex_lock(&mutex_grid);
             } while (city_map[x][y].ocupied != FREE);
         }
-
-        city_map[x][y].ocupied = dev->id;
         if (dev->curr_pos != 0)
-            city_map[dev->curr_pos - 1][dev->curr_pos - 1].ocupied = dev->id;
+        {
+            int x_prev = dev->caminhox[dev->curr_pos - 1];
+            int y_prev = dev->caminhoy[dev->curr_pos - 1];
+            city_map[x_prev][y_prev].ocupied = FREE;
+        }
+        if (x == pac->x_position && y == pac->y_position)
+        {
+            fprintf(stderr, "Deliveryman %d delivered the package %d to the location (%d, %d)\n", dev->id, pac->package_id, x, y);
+            pthread_mutex_unlock(&mutex_grid);
+            sleep(1);
+            return;
+        }
+        city_map[x][y].ocupied = dev->id;
+        fprintf(stderr, "Deliveryman %d ocupied position location (%d, %d)\n\n", dev->id, x, y);
+
         pthread_mutex_unlock(&mutex_grid);
         msleep(speed);
     }
@@ -418,7 +434,7 @@ void *work_mutherfucker(void *id_pointer)
         // Entregar o pacote
         deliver_package(&dev, &package);
         // return base
-        fprintf(stderr, "deliverer %d delivered package %d and came back to base\n", dev.id, package.package_id);
+        fprintf(stderr, "deliverer %d came back to base\n", dev.id);
     }
 }
 
